@@ -18,7 +18,7 @@
 
     - name: Clone or update Senticord repo
       git:
-        repo: git@github.com:YOUR_USER/senticord.git
+        repo: git@github.com:Hexxaal/discordbot-senticord.git
         dest: /opt/senticord
         version: main
         force: yes
