@@ -16,15 +16,6 @@
         group: dimitri
         mode: '0755'
 
-    - name: Clone or update Senticord repo
-      git:
-        repo: git@github.com:Hexxaal/discordbot-senticord.git
-        dest: /opt/senticord
-        version: main
-        force: yes
-        accept_hostkey: yes
-      become_user: dimitri
-
     - name: Install Python deps
       pip:
         requirements: /opt/senticord/requirements.txt
