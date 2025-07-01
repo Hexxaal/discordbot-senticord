@@ -1,6 +1,7 @@
 import os
 from threading import Thread
 from urllib.parse import urlencode
+import sys
 import requests
 from flask import Flask, session, redirect, url_for, request, render_template_string, abort
 import discord
@@ -16,6 +17,13 @@ OAUTH_SCOPES        = ["identify", "guilds"]
 OAUTH_STATE_SECRET  = os.getenv("OAUTH_STATE_SECRET", "CHANGE_ME")
 BOT_PERMISSIONS     = os.getenv("BOT_PERMISSIONS", "8")  # Administrator perms
 
+# Debug prints for environment
+def debug_env():
+    print(f"[DEBUG] DISCORD_TOKEN length: {len(DISCORD_TOKEN) if DISCORD_TOKEN else 'None'}", file=sys.stderr)
+    print(f"[DEBUG] CLIENT_ID: {CLIENT_ID}", file=sys.stderr)
+    print(f"[DEBUG] REDIRECT_URI: {REDIRECT_URI}", file=sys.stderr)
+    print(f"[DEBUG] OAUTH_STATE_SECRET: {'SET' if OAUTH_STATE_SECRET!='CHANGE_ME' else 'DEFAULT'}", file=sys.stderr)
+
 # ─── FIRESTORE ─────────────────────────────────────────────────────────
 db       = firestore.Client()
 settings = db.collection("guild_settings")
@@ -26,40 +34,33 @@ intents.members = True
 bot     = commands.Bot(command_prefix="!", intents=intents)
 tree    = bot.tree
 
-# ─── OAUTH & INVITE URL HELPERS ─────────────────────────────────────────
-def make_oauth_url(path: str = "/admin") -> str:
-    # state: secret|path to redirect to after auth
+# ─── BOT EVENTS & TEST COMMAND ──────────────────────────────────────────
+@bot.event
+async def on_ready():
+    print(f"✅ [Discord] Logged in as {bot.user} (ID: {bot.user.id})", file=sys.stderr)
+
+# Simple ping command to test responsiveness\@tree.command(name="ping", description="Ping the bot to test responsiveness")
+async def ping(interaction: discord.Interaction):
+    await interaction.response.send_message("Pong! 🏓")
+    print(f"[Slash] /ping invoked by {interaction.user}", file=sys.stderr)
+
+@tree.command(name="admin", description="Open this server’s dashboard")
+async def admin_cmd(interaction: discord.Interaction):
+    path = f"/admin/{interaction.guild.id}"
     state = f"{OAUTH_STATE_SECRET}|{path}"
     params = {
         "client_id":     CLIENT_ID,
         "redirect_uri":  REDIRECT_URI,
         "response_type": "code",
-        "scope":         " ".join(OAUTH_SCOPES),
+        "scope":         "identify guilds",
         "state":         state,
     }
-    return "https://discord.com/oauth2/authorize?" + urlencode(params)
-
-invite_url = "https://discord.com/oauth2/authorize?" + urlencode({
-    "client_id":   CLIENT_ID,
-    "scope":       "bot applications.commands",
-    "permissions": BOT_PERMISSIONS,
-})
-
-# ─── DISCORD EVENTS & COMMANDS ──────────────────────────────────────────
-@bot.event
-async def on_ready():
-    await tree.sync()
-    print(f"✅ Logged in as {bot.user}")
-
-@tree.command(name="admin", description="Open this server’s dashboard")
-async def admin_cmd(interaction: discord.Interaction):
-    # build OAuth2 link that will redirect to /admin/<guild_id>
-    path = f"/admin/{interaction.guild.id}"
-    url  = make_oauth_url(path)
+    oauth_url = "https://discord.com/oauth2/authorize?" + urlencode(params)
     await interaction.response.send_message(
-        f"🔒 Open dashboard for **{interaction.guild.name}**:\n{url}",
+        f"🔒 Open dashboard for **{interaction.guild.name}**:\n{oauth_url}",
         ephemeral=True
     )
+    print(f"[Slash] /admin invoked by {interaction.user} in {interaction.guild}", file=sys.stderr)
 
 # ─── FLASK APP ──────────────────────────────────────────────────────────
 app = Flask(__name__)
@@ -84,15 +85,13 @@ def index():
 def callback():
     code  = request.args.get("code")
     state = request.args.get("state", "")
-    # parse state into secret and path
     try:
         secret, path = state.split("|", 1)
     except ValueError:
-        abort(400, "Invalid state")
+        abort(400, "Invalid state format")
     if secret != OAUTH_STATE_SECRET:
         abort(403, "Invalid state secret")
 
-    # Exchange code for token
     token_res = requests.post(
         "https://discord.com/api/oauth2/token",
         data={
@@ -101,21 +100,19 @@ def callback():
             "grant_type":    "authorization_code",
             "code":          code,
             "redirect_uri":  REDIRECT_URI,
-            "scope":         " ".join(OAUTH_SCOPES),
+            "scope":         "identify guilds",
         },
         headers={"Content-Type": "application/x-www-form-urlencoded"}
     )
     token_res.raise_for_status()
     access_token = token_res.json().get("access_token")
 
-    # Fetch user & guilds
     hdr    = {"Authorization": f"Bearer {access_token}"}
     user   = requests.get("https://discord.com/api/users/@me", headers=hdr).json()
     guilds = requests.get("https://discord.com/api/users/@me/guilds", headers=hdr).json()
 
     session["user"]   = user
     session["guilds"] = guilds
-    # redirect to requested path or default
     return redirect(path or url_for("admin_panel"))
 
 @app.route("/admin")
@@ -125,10 +122,8 @@ def admin_panel():
     user   = session["user"]
     guilds = session.get("guilds", [])
     allowed = []
-    # Filter guilds where bot is present and user is owner or has admin_role
     for g in guilds:
         gid = g["id"]
-        # check bot membership via Bot token
         m = requests.get(
             f"https://discord.com/api/guilds/{gid}/members/{user['id']}",
             headers={"Authorization": f"Bot {DISCORD_TOKEN}"}
@@ -162,7 +157,6 @@ def configure_guild(guild_id):
     if "user" not in session:
         return redirect(url_for("index"))
     user = session["user"]
-    # verify membership and bot presence
     m = requests.get(
         f"https://discord.com/api/guilds/{guild_id}/members/{user['id']}",
         headers={"Authorization": f"Bot {DISCORD_TOKEN}"}
@@ -172,13 +166,11 @@ def configure_guild(guild_id):
     if request.method == "POST":
         settings.document(guild_id).set({"admin_role": request.form.get("admin_role")}, merge=True)
 
-    # fetch guild roles
     roles = requests.get(
         f"https://discord.com/api/guilds/{guild_id}/roles",
         headers={"Authorization": f"Bot {DISCORD_TOKEN}"}
     ).json()
     cfg   = settings.document(guild_id).get().to_dict() or {}
-    # fetch guild name
     ginfo = requests.get(f"https://discord.com/api/guilds/{guild_id}", headers={"Authorization": f"Bot {DISCORD_TOKEN}"})
     guild = ginfo.json() if ginfo.status_code == 200 else {"id": guild_id, "name": "Unknown"}
 
@@ -204,8 +196,11 @@ def configure_guild(guild_id):
 
 # ─── RUN FLASK + DISCORD BOT ─────────────────────────────────────────────
 if __name__ == "__main__":
-    # start Flask first (non-daemon so errors are visible)
+    debug_env()
+    # start Flask in a non-daemon thread so errors are visible
     flask_thread = Thread(target=lambda: app.run(host="0.0.0.0", port=8080))
     flask_thread.start()
-    # then start the Discord bot (blocks)
+    print("▶ Flask panel should be up on port 8080", file=sys.stderr)
+    # start Discord bot (blocks here)
+    print("▶ Connecting Discord bot to Gateway…", file=sys.stderr)
     bot.run(DISCORD_TOKEN)
