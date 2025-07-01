@@ -77,7 +77,7 @@
                   restart: unless-stopped
 
         - name: Launch bot container
-          community.docker.docker_compose:
+          community.docker.docker_compose_v2:
             project_src: /opt/senticord
             detached: true
       when: false   # set to true if you choose containerized bot
