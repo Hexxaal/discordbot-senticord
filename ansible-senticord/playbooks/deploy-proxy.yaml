@@ -47,3 +47,4 @@
     - name: Launch Traefik
       community.docker.docker_compose:
         project_src: /opt/proxy
+        state: present
