@@ -1,14 +1,15 @@
 ---
-- name: Deploy Senticord bot & panel
+- name: Deploy Senticord Bot & Panel
   hosts: localhost
   connection: local
   become: true
+  gather_facts: false
 
   vars_files:
     - ../group_vars/all/vault.yml
 
   tasks:
-    - name: Ensure app dir exists
+    - name: Ensure application directory exists
       file:
         path: /opt/senticord
         state: directory
@@ -16,19 +17,21 @@
         group: dimitri
         mode: '0755'
 
-    - name: Copy application code
-      synchronize:
-        src: ../discordbot-senticord/
+    - name: Copy application code to /opt/senticord
+      copy:
+        src: "{{ playbook_dir }}/../discordbot-senticord/"
         dest: /opt/senticord/
-        recursive: yes
-      become_user: dimitri
+        owner: dimitri
+        group: dimitri
+        mode: '0755'
+        recurse: yes
 
-    - name: Install Python deps
+    - name: Install Python dependencies
       pip:
         requirements: /opt/senticord/requirements.txt
         executable: pip3
 
-    - name: Write .env from Vault
+    - name: Write environment file
       copy:
         dest: /opt/senticord/.env
         owner: dimitri
@@ -44,7 +47,7 @@
           CAPTCHA_TIMEOUT_MIN=20
           CAPTCHA_MAX_ATTEMPTS=2
 
-    - name: Write systemd unit for Senticord Bot
+    - name: Create systemd service for Senticord Bot
       copy:
         dest: /etc/systemd/system/senticord-bot.service
         mode: '0644'
@@ -60,18 +63,18 @@
           EnvironmentFile=/opt/senticord/.env
           ExecStart=/usr/bin/python3 /opt/senticord/bot.py
           Restart=always
-          RestartSec=10
+          RestartSec=5
 
           [Install]
           WantedBy=multi-user.target
 
-    - name: Write systemd unit for Senticord Panel
+    - name: Create systemd service for Senticord Panel
       copy:
         dest: /etc/systemd/system/senticord-panel.service
         mode: '0644'
         content: |
           [Unit]
-          Description=Senticord Admin Panel
+          Description=Senticord Admin Panel (Flask)
           After=network.target
 
           [Service]
@@ -81,22 +84,22 @@
           EnvironmentFile=/opt/senticord/.env
           ExecStart=/usr/bin/python3 /opt/senticord/panel.py
           Restart=always
-          RestartSec=10
+          RestartSec=5
 
           [Install]
           WantedBy=multi-user.target
 
-    - name: Reload systemd
+    - name: Reload systemd daemon
       systemd:
         daemon_reload: yes
 
-    - name: Enable & start Senticord Bot service
+    - name: Enable and start Discord Bot service
       systemd:
         name: senticord-bot
         enabled: yes
         state: restarted
 
-    - name: Enable & start Senticord Panel service
+    - name: Enable and start Admin Panel service
       systemd:
         name: senticord-panel
         enabled: yes
