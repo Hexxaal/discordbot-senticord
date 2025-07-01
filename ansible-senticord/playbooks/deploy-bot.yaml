@@ -18,8 +18,16 @@
 
     - name: Install Python deps
       pip:
-        requirements: /opt/senticord/requirements.txt
+        requirements: /opt/discordbot-senticord/requirements.txt
         executable: pip3
+
+    - name: Ensure Node.js and npm are installed (Debian/Ubuntu)
+      ansible.builtin.apt:
+        name:
+          - nodejs
+          - npm
+        state: present
+        update_cache: yes
 
     - name: Install JS deps
       npm:
