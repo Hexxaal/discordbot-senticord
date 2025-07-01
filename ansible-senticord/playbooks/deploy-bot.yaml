@@ -42,7 +42,6 @@
           DISCORD_CLIENT_ID={{ discord_client_id }}
           DISCORD_CLIENT_SECRET={{ discord_client_secret }}
           REDIRECT_URI={{ redirect_uri }}
-          OAUTH_STATE_SECRET={{ oauth_state_secret }}
           BOT_PERMISSIONS=8
           CAPTCHA_TIMEOUT_MIN=20
           CAPTCHA_MAX_ATTEMPTS=2
