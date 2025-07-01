@@ -1,0 +1,50 @@
+---
+- name: Deploy Traefik reverse proxy
+  hosts: localhost
+  connection: local
+  become: true
+
+  tasks:
+    - name: Ensure proxy dir exists
+      file:
+        path: /opt/proxy
+        state: directory
+        owner: dimitri
+        group: dimitri
+        mode: '0755'
+
+    - name: Drop docker-compose for Traefik
+      copy:
+        dest: /opt/proxy/docker-compose.yml
+        owner: dimitri
+        group: dimitri
+        content: |
+          version: '3.8'
+          services:
+            traefik:
+              image: traefik:latest
+              command:
+                - "--providers.docker=true"
+                - "--entryPoints.web.address=:80"
+                - "--entryPoints.websecure.address=:443"
+                - "--certificatesResolvers.selfsigned.acme.tlsChallenge=true"
+                - "--certificatesResolvers.selfsigned.acme.storage=/letsencrypt/acme.json"
+              ports:
+                - "80:80"
+                - "443:443"
+              volumes:
+                - /var/run/docker.sock:/var/run/docker.sock:ro
+                - /opt/proxy/letsencrypt:/letsencrypt
+
+    - name: Create letsencrypt storage
+      file:
+        path: /opt/proxy/letsencrypt
+        state: directory
+        owner: dimitri
+        group: dimitri
+        mode: '0700'
+
+    - name: Launch Traefik
+      community.docker.docker_compose:
+        project_src: /opt/proxy
+        detached: true
