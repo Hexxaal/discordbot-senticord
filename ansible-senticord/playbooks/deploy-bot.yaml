@@ -19,7 +19,7 @@
 
     - name: Copy application code to /opt/senticord
       copy:
-        src: "{{ playbook_dir }}/../discordbot-senticord/"
+        src: /opt/discordbot-senticord/      # <-- point this at where your code actually lives
         dest: /opt/senticord/
         owner: dimitri
         group: dimitri
