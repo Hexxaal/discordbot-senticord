@@ -19,12 +19,12 @@
 
     - name: Copy application code to /opt/senticord
       copy:
-        src: /opt/discordbot-senticord/      # <-- point this at where your code actually lives
+        src: /opt/discordbot-senticord/    # adjust to wherever your code lives on the controller
         dest: /opt/senticord/
         owner: dimitri
         group: dimitri
         mode: '0755'
-        recurse: yes
+        # no 'recurse' needed—copy will traverse directories by default
 
     - name: Install Python dependencies
       pip:
