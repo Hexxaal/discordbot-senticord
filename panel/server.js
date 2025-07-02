@@ -41,6 +41,44 @@ app.get('/auth/callback',
 
 // 4) Your API routes (e.g. GET/POST /api/guilds/:id/settings) go here…
 
+// … after app.use(express.static(buildPath))
+
+// JSON body parsing + sessions + passport already set up above…
+
+// ─── OAuth2 LOGIN & CALLBACK ────────────────────────────────────
+app.get('/auth/login', passport.authenticate('discord'));
+
+app.get(
+  '/auth/callback',
+  passport.authenticate('discord', { failureRedirect: '/' }),
+  (req, res) => {
+    // On successful login, redirect into your panel
+    const guildId = req.user.guilds[0].id;
+    res.redirect(`/guilds/${guildId}`);
+  }
+);
+
+// ─── SETTINGS API ───────────────────────────────────────────────
+// Return the current settings for a guild as JSON
+app.get('/api/guilds/:id/settings', checkAdmin, (req, res) => {
+  const cfg = getSettingsFromSQLite(req.params.id);
+  res.json(cfg);
+});
+
+// Save updated settings from the React UI
+app.post('/api/guilds/:id/settings', checkAdmin, (req, res) => {
+  const { adminRole, logChannel, /* any other fields */ } = req.body;
+  saveSettingsToSQLite(req.params.id, adminRole, logChannel);
+  res.json({ success: true });
+});
+// Middleware to check if user is admin
+function checkAdmin(req, res, next) {
+  if (!req.isAuthenticated() || !req.user.guilds.some(g => g.id === req.params.id && g.permissions.includes('ADMINISTRATOR'))) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  next();
+}
+
 // 5) Panel UI route – always serve index.html for /guilds/:id
 app.get('/guilds/:id', (req, res) => {
   res.sendFile(path.join(buildPath, 'index.html'));
