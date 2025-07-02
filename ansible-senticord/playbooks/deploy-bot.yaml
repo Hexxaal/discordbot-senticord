@@ -8,20 +8,17 @@
   vars_files:
     - ../group_vars/all/vault.yml
 
-- name: Generate a random session secret for webPanel and append it to the vault
-  ansible.builtin.set_fact:
-    session_secret: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters') }}" # Generates a random 32-character alphanumeric string
-  no_log: true
-  register: session_secret_result
-  when: session_secret is not defined or session_secret == ""
-  post_tasks:
-    - name: Append session secret to vault
-      ansible.builtin.lineinfile:
-        path: ../group_vars/all/vault.yml
-        line: "session_secret: {{ session_secret }}"
-        create: yes
-        state: present
   tasks:
+  #Generate a random session secret for webPanel and append it to the vault
+    - name: Generate random session secret
+      ansible.builtin.set_fact:
+        session_secret: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters') }}"
+      no_log: true
+    - name: Ensure session secret is in vault
+      ansible.builtin.set_fact:
+        vault_session_secret: "{{ session_secret }}"
+      no_log: true
+      
     - name: Ensure application directory exists
       file:
         path: /opt/senticord
