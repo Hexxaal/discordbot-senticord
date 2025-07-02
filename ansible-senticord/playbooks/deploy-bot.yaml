@@ -43,11 +43,15 @@
       args:
         chdir: /opt/senticord/panel/client
 
-    - name: Build React client
+    - name: Build React client (CI mode, non-interactive)
       become_user: dimitri
-      shell: npm run build
+      shell: |
+          export CI=true
+          npm run build -- --no-progress
       args:
         chdir: /opt/senticord/panel/client
+        executable: /bin/bash
+
 
     - name: Ensure build directory is present and owned
       file:
