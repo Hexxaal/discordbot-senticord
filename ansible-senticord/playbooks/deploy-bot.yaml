@@ -9,16 +9,6 @@
     - ../group_vars/all/vault.yml
 
   tasks:
-  #Generate a random session secret for webPanel and append it to the vault
-    - name: Generate random session secret
-      ansible.builtin.set_fact:
-        session_secret: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters') }}"
-      no_log: true
-    - name: Ensure session secret is in vault
-      ansible.builtin.set_fact:
-        vault_session_secret: "{{ session_secret }}"
-      no_log: true
-      
     - name: Ensure application directory exists
       file:
         path: /opt/senticord
@@ -27,7 +17,7 @@
         group: dimitri
         mode: '0755'
 
-    - name: Copy application code
+    - name: Copy application code to /opt/senticord
       copy:
         src: /opt/discordbot-senticord/
         dest: /opt/senticord/
@@ -40,12 +30,35 @@
         requirements: /opt/senticord/requirements.txt
         executable: pip3
 
-    - name: Install Node dependencies for panel
+    # ─── PANEL BUILD ────────────────────────────────────────────────
+    - name: Install panel server dependencies
+      become_user: dimitri
       shell: npm install --production
       args:
         chdir: /opt/senticord/panel
 
-    - name: Write .env (bot & panel)
+    - name: Install React client dependencies
+      become_user: dimitri
+      shell: npm install
+      args:
+        chdir: /opt/senticord/panel/client
+
+    - name: Build React client
+      become_user: dimitri
+      shell: npm run build
+      args:
+        chdir: /opt/senticord/panel/client
+
+    - name: Ensure build directory is present and owned
+      file:
+        path: /opt/senticord/panel/client/build
+        state: directory
+        owner: dimitri
+        group: dimitri
+        recurse: yes
+
+    # ─── ENV & SERVICES ────────────────────────────────────────────
+    - name: Write environment file for bot & panel
       copy:
         dest: /opt/senticord/.env
         owner: dimitri
@@ -61,7 +74,7 @@
           CAPTCHA_MAX_ATTEMPTS=2
           SESSION_SECRET={{ session_secret }}
 
-    - name: Ensure systemd unit for Senticord Bot
+    - name: Create systemd unit for Senticord Bot
       copy:
         dest: /etc/systemd/system/senticord-bot.service
         mode: '0644'
@@ -82,7 +95,7 @@
           [Install]
           WantedBy=multi-user.target
 
-    - name: Ensure systemd unit for Senticord Panel
+    - name: Create systemd unit for Senticord Panel
       copy:
         dest: /etc/systemd/system/senticord-panel.service
         mode: '0644'
@@ -103,7 +116,7 @@
           [Install]
           WantedBy=multi-user.target
 
-    - name: Reload systemd
+    - name: Reload systemd daemon
       systemd:
         daemon_reload: yes
 
