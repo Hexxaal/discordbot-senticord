@@ -19,12 +19,11 @@
 
     - name: Copy application code to /opt/senticord
       copy:
-        src: /opt/discordbot-senticord/    # adjust to wherever your code lives on the controller
+        src: /opt/discordbot-senticord/
         dest: /opt/senticord/
         owner: dimitri
         group: dimitri
         mode: '0755'
-        # no 'recurse' needed—copy will traverse directories by default
 
     - name: Install Python dependencies
       pip:
@@ -73,15 +72,15 @@
         mode: '0644'
         content: |
           [Unit]
-          Description=Senticord Admin Panel (Flask)
+          Description=Senticord Admin Panel (Express)
           After=network.target
 
           [Service]
           Type=simple
           User=dimitri
-          WorkingDirectory=/opt/senticord
+          WorkingDirectory=/opt/senticord/panel
           EnvironmentFile=/opt/senticord/.env
-          ExecStart=/usr/bin/python3 /opt/senticord/panel.py
+          ExecStart=/usr/bin/npm start
           Restart=always
           RestartSec=5
 
@@ -92,14 +91,11 @@
       systemd:
         daemon_reload: yes
 
-    - name: Enable and start Discord Bot service
+    - name: Enable and start services
       systemd:
-        name: senticord-bot
+        name: "{{ item }}"
         enabled: yes
         state: restarted
-
-    - name: Enable and start Admin Panel service
-      systemd:
-        name: senticord-panel
-        enabled: yes
-        state: restarted
+      loop:
+        - senticord-bot
+        - senticord-panel
