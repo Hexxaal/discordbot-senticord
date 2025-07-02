@@ -38,25 +38,23 @@
         group: dimitri
         mode: '0755'
 
-    # ─── Bot & DB setup ───────────────────────────────────────────────
-    - name: Install Python dependencies
+    - name: Install Python dependencies for Bot & Panel
       pip:
         requirements: /opt/senticord/requirements.txt
         executable: pip3
 
-    - name: Run DB migrations
+    - name: Run database migrations
       shell: node /opt/senticord/database/migrate.js
       args:
         creates: /opt/senticord/senticord.db
 
-    # ─── Panel API (Express) ─────────────────────────────────────────
     - name: Install Node deps for Panel API
       become_user: dimitri
       shell: npm install --production
       args:
         chdir: /opt/senticord/panel
 
-    - name: Ensure static SPA dir exists
+    - name: Ensure static SPA directory exists
       file:
         path: /opt/senticord/panel/static
         state: directory
@@ -64,10 +62,7 @@
         group: dimitri
         mode: '0755'
 
-    # (static/index.html & static/app.js are already in your repo)
-
-    # ─── Environment ─────────────────────────────────────────────────
-    - name: Write .env for bot & panel
+    - name: Write .env for Bot & Panel
       copy:
         dest: /opt/senticord/.env
         owner: dimitri
@@ -81,9 +76,8 @@
           BOT_PERMISSIONS=8
           CAPTCHA_TIMEOUT_MIN=20
           CAPTCHA_MAX_ATTEMPTS=2
-          
+          SESSION_SECRET={{ session_secret }}
 
-    # ─── systemd services ─────────────────────────────────────────────
     - name: Create systemd unit for Discord Bot
       copy:
         dest: /etc/systemd/system/senticord-bot.service
@@ -126,37 +120,16 @@
           [Install]
           WantedBy=multi-user.target
 
-    # ─── Nginx reverse proxy ──────────────────────────────────────────
-    - name: Deploy Nginx site for Panel SPA
+    - name: Deploy Nginx config for Panel SPA
       copy:
+        src: files/senticord-panel.conf
         dest: /etc/nginx/sites-available/senticord-panel
+        owner: root
+        group: root
         mode: '0644'
-        content: |
-          server {
-              listen 80;
-              server_name panel.yourdomain.com;
-
-              root /opt/senticord/panel/static;
-              index index.html;
-
-              # Serve SPA
-              location / {
-                try_files $uri /index.html;
-              }
-
-              # Proxy API & OAuth to Express
-              location ~ ^/(api|auth)/ {
-                proxy_pass http://127.0.0.1:3000;
-                proxy_set_header Host $host;
-                proxy_set_header X-Real-IP $remote_addr;
-                proxy_http_version 1.1;
-                proxy_set_header Upgrade $http_upgrade;
-                proxy_set_header Connection $connection_upgrade;
-              }
-          }
       notify: Reload Nginx
 
-    - name: Enable Nginx site
+    - name: Enable Senticord panel site
       file:
         src: /etc/nginx/sites-available/senticord-panel
         dest: /etc/nginx/sites-enabled/senticord-panel
