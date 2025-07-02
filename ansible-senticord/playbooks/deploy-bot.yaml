@@ -8,27 +8,19 @@
   vars_files:
     - ../group_vars/all/vault.yml
 
-  pre_tasks:
-    - name: Generate session_secret and store in vault if missing
-      # Only runs if vault.yml doesn’t already contain session_secret
-      when: "'session_secret' not in lookup('file','../group_vars/all/vault.yml')"
-      local_action:
-        module: command
-        # Generate a 64-char random secret, encrypt it with ansible-vault, name it 'session_secret'
-        cmd: >
-          ansible-vault encrypt_string --vault-password-file ~/.vault_pass
-          "{{ lookup('password','/dev/null length=64 chars=ascii_letters,digits') }}"
-          --name 'session_secret'
-      register: vault_secret
-
-    - name: Append new session_secret into your vault file
-      when: vault_secret.stdout is defined
-      local_action:
-        module: lineinfile
+- name: Generate a random session secret for webPanel and append it to the vault
+  ansible.builtin.set_fact:
+    session_secret: "{{ lookup('password', '/dev/null length=32 chars=ascii_letters') }}" # Generates a random 32-character alphanumeric string
+  no_log: true
+  register: session_secret_result
+  when: session_secret is not defined or session_secret == ""
+  post_tasks:
+    - name: Append session secret to vault
+      ansible.builtin.lineinfile:
         path: ../group_vars/all/vault.yml
-        line: "{{ vault_secret.stdout }}\n"
-        insertafter: EOF
-
+        line: "session_secret: {{ session_secret }}"
+        create: yes
+        state: present
   tasks:
     - name: Ensure application directory exists
       file:
