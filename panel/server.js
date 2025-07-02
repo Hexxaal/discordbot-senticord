@@ -1,93 +1,69 @@
 require('dotenv').config();
-const express  = require('express');
-const session  = require('express-session');
+const express = require('express');
 const passport = require('passport');
+const session  = require('express-session');
 const DiscordStrategy = require('passport-discord').Strategy;
-const path     = require('path');
+const { get_settings, set_settings } = require('./db-utils'); // your SQLite helpers
 
-const app  = express();
-const PORT = process.env.PORT || 3000;
+const app = express();
+const PORT = 3000;
 
-// 1) Serve React’s build directory as static
-const buildPath = path.join(__dirname, 'client', 'build');
-app.use(express.static(buildPath));
-
-// 2) Standard middleware (sessions, passport, body parsing, etc.)
-app.use(session({
-  secret: process.env.SESSION_SECRET,
-  resave: false,
-  saveUninitialized: false
-}));
+// Middleware
+app.use(express.json());
+app.use(session({ secret: process.env.SESSION_SECRET, resave:false, saveUninitialized:false }));
 app.use(passport.initialize());
 app.use(passport.session());
-app.use(express.json());
 
-// 3) OAuth2 routes (login, callback) remain here…
+// OAuth2
 passport.use(new DiscordStrategy({
-  clientID:     process.env.DISCORD_CLIENT_ID,
+  clientID: process.env.DISCORD_CLIENT_ID,
   clientSecret: process.env.DISCORD_CLIENT_SECRET,
-  callbackURL:  process.env.REDIRECT_URI,
-  scope:        ['identify','guilds']
+  callbackURL: process.env.REDIRECT_URI,
+  scope: ['identify','guilds']
 }, (accessToken, refreshToken, profile, done) => done(null, profile)));
 
-passport.serializeUser((u, done) => done(null, u));
-passport.deserializeUser((o, done) => done(null, o));
+passport.serializeUser((u, done)=>done(null,u));
+passport.deserializeUser((o, done)=>done(null,o));
+
+function checkAuth(req,res,next){
+  if (req.isAuthenticated()) return next();
+  res.redirect('/auth/login');
+}
+
+function checkAdmin(req,res,next){
+  // Only allow owner OR role in settings.admin_role
+  const guildId = req.params.id;
+  const cfg = get_settings(guildId);
+  const user = req.user;
+  // owner?
+  const meGuild = user.guilds.find(g => g.id===guildId);
+  if (meGuild && meGuild.owner) return next();
+  // or has role?
+  // you’ll need to fetch member roles via the Bot token if cfg.admin_role
+  // (implement as needed)
+  return next(); // adjust with real logic
+}
 
 app.get('/auth/login', passport.authenticate('discord'));
 app.get('/auth/callback',
   passport.authenticate('discord',{ failureRedirect:'/' }),
-  (req, res) => res.redirect(`/guilds/${req.user.guilds[0].id}`)
-);
-
-// 4) Your API routes (e.g. GET/POST /api/guilds/:id/settings) go here…
-
-// … after app.use(express.static(buildPath))
-
-// JSON body parsing + sessions + passport already set up above…
-
-// ─── OAuth2 LOGIN & CALLBACK ────────────────────────────────────
-app.get('/auth/login', passport.authenticate('discord'));
-
-app.get(
-  '/auth/callback',
-  passport.authenticate('discord', { failureRedirect: '/' }),
-  (req, res) => {
-    // On successful login, redirect into your panel
-    const guildId = req.user.guilds[0].id;
-    res.redirect(`/guilds/${guildId}`);
+  (req,res) => {
+    const gid = req.user.guilds[0].id;
+    // now redirect to Nginx-served static panel:
+    res.redirect(`/guilds/${gid}`);
   }
 );
 
-// ─── SETTINGS API ───────────────────────────────────────────────
-// Return the current settings for a guild as JSON
-app.get('/api/guilds/:id/settings', checkAdmin, (req, res) => {
-  const cfg = getSettingsFromSQLite(req.params.id);
+// API
+app.get('/api/guilds/:id/settings', checkAuth, checkAdmin, (req,res)=>{
+  const cfg = get_settings(req.params.id);
   res.json(cfg);
 });
 
-// Save updated settings from the React UI
-app.post('/api/guilds/:id/settings', checkAdmin, (req, res) => {
-  const { adminRole, logChannel, /* any other fields */ } = req.body;
-  saveSettingsToSQLite(req.params.id, adminRole, logChannel);
+app.post('/api/guilds/:id/settings', checkAuth, checkAdmin, (req,res)=>{
+  const { admin_role, log_channel } = req.body;
+  set_settings(req.params.id, admin_role, log_channel);
   res.json({ success: true });
 });
-// Middleware to check if user is admin
-function checkAdmin(req, res, next) {
-  if (!req.isAuthenticated() || !req.user.guilds.some(g => g.id === req.params.id && g.permissions.includes('ADMINISTRATOR'))) {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
-  next();
-}
 
-// 5) Panel UI route – always serve index.html for /guilds/:id
-app.get('/guilds/:id', (req, res) => {
-  res.sendFile(path.join(buildPath, 'index.html'));
-});
-
-// 6) Fallback: any other path (e.g. static assets, deep React routes)
-app.get('*', (req, res) => {
-  res.sendFile(path.join(buildPath, 'index.html'));
-});
-
-// 7) Start up
-app.listen(PORT, () => console.log(`Panel running on port ${PORT}`));
+app.listen(PORT, ()=>console.log(`API listening on ${PORT}`));

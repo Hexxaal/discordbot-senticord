@@ -1,5 +1,5 @@
 ---
-- name: Deploy Senticord Bot & Panel
+- name: Deploy Senticord Bot, Panel API & Nginx SPA
   hosts: localhost
   connection: local
   become: true
@@ -8,8 +8,21 @@
   vars_files:
     - ../group_vars/all/vault.yml
 
+  pre_tasks:
+    - name: Install Nginx
+      apt:
+        name: nginx
+        state: latest
+        update_cache: yes
+
+    - name: Remove default Nginx site
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Reload Nginx
+
   tasks:
-    - name: Ensure application directory exists
+    - name: Ensure /opt/senticord exists
       file:
         path: /opt/senticord
         state: directory
@@ -25,44 +38,36 @@
         group: dimitri
         mode: '0755'
 
+    # ─── Bot & DB setup ───────────────────────────────────────────────
     - name: Install Python dependencies
       pip:
         requirements: /opt/senticord/requirements.txt
         executable: pip3
 
-    # ─── PANEL BUILD ────────────────────────────────────────────────
-    - name: Install panel server dependencies
+    - name: Run DB migrations
+      shell: node /opt/senticord/database/migrate.js
+      args:
+        creates: /opt/senticord/senticord.db
+
+    # ─── Panel API (Express) ─────────────────────────────────────────
+    - name: Install Node deps for Panel API
       become_user: dimitri
       shell: npm install --production
       args:
         chdir: /opt/senticord/panel
 
-    - name: Install React client dependencies
-      become_user: dimitri
-      shell: npm install
-      args:
-        chdir: /opt/senticord/panel/client
-
-    - name: Build React client (CI mode, non-interactive)
-      become_user: dimitri
-      shell: |
-          export CI=true
-          npm run build -- --no-progress
-      args:
-        chdir: /opt/senticord/panel/client
-        executable: /bin/bash
-
-
-    - name: Ensure build directory is present and owned
+    - name: Ensure static SPA dir exists
       file:
-        path: /opt/senticord/panel/client/build
+        path: /opt/senticord/panel/static
         state: directory
         owner: dimitri
         group: dimitri
-        recurse: yes
+        mode: '0755'
 
-    # ─── ENV & SERVICES ────────────────────────────────────────────
-    - name: Write environment file for bot & panel
+    # (static/index.html & static/app.js are already in your repo)
+
+    # ─── Environment ─────────────────────────────────────────────────
+    - name: Write .env for bot & panel
       copy:
         dest: /opt/senticord/.env
         owner: dimitri
@@ -78,7 +83,8 @@
           CAPTCHA_MAX_ATTEMPTS=2
           SESSION_SECRET={{ session_secret }}
 
-    - name: Create systemd unit for Senticord Bot
+    # ─── systemd services ─────────────────────────────────────────────
+    - name: Create systemd unit for Discord Bot
       copy:
         dest: /etc/systemd/system/senticord-bot.service
         mode: '0644'
@@ -99,13 +105,13 @@
           [Install]
           WantedBy=multi-user.target
 
-    - name: Create systemd unit for Senticord Panel
+    - name: Create systemd unit for Panel API
       copy:
         dest: /etc/systemd/system/senticord-panel.service
         mode: '0644'
         content: |
           [Unit]
-          Description=Senticord Admin Panel (Express/React)
+          Description=Senticord Admin Panel API
           After=network.target
 
           [Service]
@@ -120,14 +126,52 @@
           [Install]
           WantedBy=multi-user.target
 
-    - name: Reload systemd daemon
-      systemd:
-        daemon_reload: yes
+    # ─── Nginx reverse proxy ──────────────────────────────────────────
+    - name: Deploy Nginx site for Panel SPA
+      copy:
+        dest: /etc/nginx/sites-available/senticord-panel
+        mode: '0644'
+        content: |
+          server {
+              listen 80;
+              server_name panel.yourdomain.com;
 
-    - name: Enable & restart services
+              root /opt/senticord/panel/static;
+              index index.html;
+
+              # Serve SPA
+              location / {
+                try_files $uri /index.html;
+              }
+
+              # Proxy API & OAuth to Express
+              location ~ ^/(api|auth)/ {
+                proxy_pass http://127.0.0.1:3000;
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection $connection_upgrade;
+              }
+          }
+      notify: Reload Nginx
+
+    - name: Enable Nginx site
+      file:
+        src: /etc/nginx/sites-available/senticord-panel
+        dest: /etc/nginx/sites-enabled/senticord-panel
+        state: link
+      notify: Reload Nginx
+
+  handlers:
+    - name: Reload Nginx
+      systemd:
+        name: nginx
+        state: reloaded
+
+    - name: Restart services
       systemd:
         name: "{{ item }}"
-        enabled: yes
         state: restarted
       loop:
         - senticord-bot
