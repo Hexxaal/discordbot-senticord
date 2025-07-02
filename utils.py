@@ -1,13 +1,14 @@
+import os
 import sqlite3
 from threading import Lock
 from datetime import datetime
 
-DB_PATH = __import__('os').getenv("SQLITE_DB_PATH", "senticord.db")
+DB_PATH = os.getenv("SQLITE_DB_PATH", "senticord.db")
 _conn   = sqlite3.connect(DB_PATH, check_same_thread=False)
 _lock   = Lock()
 _cursor = _conn.cursor()
 
-# Pending captchas
+# ─── pending_captchas ──────────────────────────────────────────────────
 _cursor.execute("""
 CREATE TABLE IF NOT EXISTS pending_captchas (
   member_id TEXT PRIMARY KEY,
@@ -59,7 +60,7 @@ def delete_pending(member_id: str):
         )
         _conn.commit()
 
-# Guild settings
+# ─── guild_settings ────────────────────────────────────────────────────
 _cursor.execute("""
 CREATE TABLE IF NOT EXISTS guild_settings (
   guild_id    TEXT PRIMARY KEY,

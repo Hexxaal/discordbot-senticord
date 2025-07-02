@@ -31,7 +31,7 @@ class CaptchaCog(commands.Cog):
         if not p:
             return
 
-        # Timeout check
+        # Timeout
         if datetime.utcnow() - p["created"] > TIMEOUT:
             await msg.author.send("⏰ Time expired. You have been kicked.")
             guild = msg.author.guild
@@ -51,7 +51,6 @@ class CaptchaCog(commands.Cog):
             await log_action(p["guild_id"], f"✅ {msg.author.mention} verified")
             delete_pending(str(msg.author.id))
         else:
-            # Wrong attempt
             atts = p["attempts"] + 1
             update_attempts(str(msg.author.id), atts)
             if atts >= MAX_ATTEMPTS:
