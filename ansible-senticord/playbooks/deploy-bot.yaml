@@ -43,6 +43,17 @@
         requirements: /opt/senticord/requirements.txt
         executable: pip3
 
+    - name: Ensure SQLite and build tools are present
+      apt:
+        name:
+          - sqlite3
+          - libsqlite3-dev
+          - build-essential
+      state: present
+      update_cache: yes
+
+  
+
     - name: Run database migrations
       shell: node /opt/senticord/database/migrate.js
       args:
