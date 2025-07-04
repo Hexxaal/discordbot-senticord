@@ -122,7 +122,7 @@
 
     - name: Ensure nginx SSL directory exists
       file:
-        path: "{{ ssl_dest_dir }}"
+        path: "/etc/nginx/ssl"
         state: directory
         owner: root
         group: root
@@ -131,7 +131,7 @@
     - name: Deploy Origin Certificate (vault-encrypted)
       copy:
         src: files/ssl/panel.senticord.org.crt
-        dest: "{{ ssl_dest_dir }}/panel.senticord.org.crt"
+        dest: "/etc/nginx/ssl/panel.senticord.org.crt"
         owner: root
         group: root
         mode: '0644'
@@ -139,7 +139,7 @@
     - name: Deploy Origin Private Key (vault-encrypted)
       copy:
         src: files/ssl/panel.senticord.org.pem
-        dest: "{{ ssl_dest_dir }}/panel.senticord.org.pem"
+        dest: "/etc/nginx/ssl/panel.senticord.org.pem"
         owner: root
         group: root
         mode: '0600'
