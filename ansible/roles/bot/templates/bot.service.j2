@@ -1,0 +1,12 @@
+[Unit]
+Description=Senticord Discord Bot
+After=network.target
+
+[Service]
+User={{ ansible_user }}
+WorkingDirectory={{ bot_dest }}
+ExecStart={{ venv_path }}/bin/python bot.py
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,3 @@
+# Defaults for webpanel role
+webpanel_repo: https://github.com/yourorg/senticord.git
+webpanel_dest: /opt/senticord/webpanel

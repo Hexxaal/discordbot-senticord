@@ -1,0 +1,3 @@
+# Defaults for bot role
+bot_repo: https://github.com/yourorg/senticord.git
+bot_dest: /opt/senticord/bot

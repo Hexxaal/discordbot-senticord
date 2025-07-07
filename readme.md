@@ -1,15 +1,18 @@
-# Senticord
-
-Super-Admin Discord bot in Python + JS  
-Features:
-- CAPTCHA on join
-- Reaction roles
-- Spam/flood detection & auto-moderation
-- NSFW channel checks
-- Custom slash commands
+# Senticord - Discord Bot
 
 ## Structure
 
-- `main.py` — Python bot (captcha, spam-filter, welcome, role assign)
-- `js/index.js` — JS bot (reaction roles, advanced dashboard, optional LLM calls)
-- `Procfile` — Heroku / container entrypoint
+- `ansible/roles`: Contains `api`, `webpanel`, `bot` roles for deployment.
+- `commands`: Python command modules.
+- `panel`: Static frontend files.
+- `bot.py`, `utils.py`: Core bot logic.
+- `backend`: Express API for OAuth2 and server data.
+- `frontend`: React panel source.
+
+## Deployment
+
+Use Ansible to deploy all components:
+
+```bash
+ansible-playbook ansible/site.yml -i ansible/inventories
+```

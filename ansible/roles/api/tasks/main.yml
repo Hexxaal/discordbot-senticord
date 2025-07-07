@@ -1,0 +1,3 @@
+---
+# Tasks for api role
+- debug: msg="Deploying api..."

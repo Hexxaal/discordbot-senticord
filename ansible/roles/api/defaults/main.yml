@@ -1,0 +1,3 @@
+# Defaults for api role
+api_repo: https://github.com/yourorg/senticord.git
+api_dest: /opt/senticord/api

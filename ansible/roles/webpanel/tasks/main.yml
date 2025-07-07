@@ -1,0 +1,3 @@
+---
+# Tasks for webpanel role
+- debug: msg="Deploying webpanel..."

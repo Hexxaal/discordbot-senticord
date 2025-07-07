@@ -1,0 +1,4 @@
+# General non-sensitive variables
+bot_prefix: !
+panel_domain: yourdomain.com
+node_env: production

@@ -1,0 +1,12 @@
+[Unit]
+Description=Senticord API
+After=network.target
+
+[Service]
+User={{ ansible_user }}
+WorkingDirectory={{ api_dest }}
+ExecStart=/usr/bin/npm start
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
