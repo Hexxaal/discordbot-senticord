@@ -1,0 +1,187 @@
+---
+- name: Deploy Senticord Bot, Panel API & Nginx SPA
+  hosts: localhost
+  connection: local
+  become: true
+  gather_facts: false
+
+  vars_files:
+    - ../group_vars/all/vault.yml
+
+  pre_tasks:
+    - name: Install Nginx
+      apt:
+        name: nginx
+        state: latest
+        update_cache: yes
+
+    - name: Remove default Nginx site
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Reload Nginx
+
+  tasks:
+    - name: Ensure /opt/senticord exists
+      file:
+        path: /opt/senticord
+        state: directory
+        owner: dimitri
+        group: dimitri
+        mode: '0755'
+
+    - name: Copy application code to /opt/senticord
+      copy:
+        src: /opt/discordbot-senticord/
+        dest: /opt/senticord/
+        owner: dimitri
+        group: dimitri
+        mode: '0755'
+
+    - name: Install Python dependencies for Bot & Panel
+      pip:
+        requirements: /opt/senticord/requirements.txt
+        executable: pip3
+
+    - name: Ensure SQLite and build tools are present
+      apt:
+        name:
+          - sqlite3
+          - libsqlite3-dev
+          - build-essential
+        state: present
+        update_cache: yes
+
+  
+
+    - name: Run database migrations
+      shell: node /opt/senticord/database/migrate.js
+      args:
+        creates: /opt/senticord/senticord.db
+
+    - name: Install Node deps for Panel API
+      become_user: dimitri
+      shell: npm install --production
+      args:
+        chdir: /opt/senticord/panel
+
+    - name: Ensure static SPA directory exists
+      file:
+        path: /opt/senticord/panel/static
+        state: directory
+        owner: dimitri
+        group: dimitri
+        mode: '0755'
+
+    - name: Write .env for Bot & Panel
+      copy:
+        dest: /opt/senticord/.env
+        owner: dimitri
+        group: dimitri
+        mode: '0600'
+        content: |
+          DISCORD_TOKEN={{ discord_token }}
+          DISCORD_CLIENT_ID={{ discord_client_id }}
+          DISCORD_CLIENT_SECRET={{ discord_client_secret }}
+          REDIRECT_URI={{ redirect_uri }}
+          BOT_PERMISSIONS=8
+          CAPTCHA_TIMEOUT_MIN=20
+          CAPTCHA_MAX_ATTEMPTS=2
+
+
+    - name: Create systemd unit for Discord Bot
+      copy:
+        dest: /etc/systemd/system/senticord-bot.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Senticord Discord Bot
+          After=network.target
+
+          [Service]
+          Type=simple
+          User=dimitri
+          WorkingDirectory=/opt/senticord
+          EnvironmentFile=/opt/senticord/.env
+          ExecStart=/usr/bin/python3 /opt/senticord/bot.py
+          Restart=always
+          RestartSec=5
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Create systemd unit for Panel API
+      copy:
+        dest: /etc/systemd/system/senticord-panel.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Senticord Admin Panel API
+          After=network.target
+
+          [Service]
+          Type=simple
+          User=dimitri
+          WorkingDirectory=/opt/senticord/panel
+          EnvironmentFile=/opt/senticord/.env
+          ExecStart=/usr/bin/npm start
+          Restart=always
+          RestartSec=5
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Ensure nginx SSL directory exists
+      file:
+        path: "/etc/nginx/ssl"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Deploy Origin Certificate (vault-encrypted)
+      copy:
+        src: files/ssl/panel.senticord.org.crt
+        dest: "/etc/nginx/ssl/panel.senticord.org.crt"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Deploy Origin Private Key (vault-encrypted)
+      copy:
+        src: files/ssl/panel.senticord.org.pem
+        dest: "/etc/nginx/ssl/panel.senticord.org.pem"
+        owner: root
+        group: root
+        mode: '0600'
+
+    - name: Deploy Nginx config for Panel SPA
+      copy:
+        src: files/senticord-panel.conf
+        dest: /etc/nginx/sites-available/senticord-panel.conf
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Reload Nginx
+
+    - name: Enable Senticord panel site
+      file:
+        src: /etc/nginx/sites-available/senticord-panel.conf
+        dest: /etc/nginx/sites-enabled/senticord-panel.conf
+        state: link
+      notify: Reload Nginx
+
+  handlers:
+    - name: Reload Nginx
+      systemd:
+        name: nginx
+        state: reloaded
+
+
+    - name: Restart services
+      systemd:
+        name: "{{ item }}"
+        state: restarted
+      loop:
+        - senticord-bot
+        - senticord-panel
